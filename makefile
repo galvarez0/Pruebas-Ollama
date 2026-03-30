@@ -1,10 +1,5 @@
-APP_NAME := Pruebas-Ollama
-SSH_USER := root
 SSH_HOST := 138.197.101.64
-SSH_PORT := 22
-REMOTE_DIR := /opt/$(APP_NAME)
 
-SSH := ssh -p $(SSH_PORT)
 RSYNC := rsync -az --delete
 
 RSYNC_EXCLUDES := \
@@ -22,25 +17,23 @@ RSYNC_EXCLUDES := \
 
 help:
 	@echo "Targets disponibles:"
-	@echo "  make provision      -> envia archivos al servidor, descarga dependencias y compila"
+	@echo "  make provision      -> envia archivos, instala deps y compila binarios"
 	@echo "  make sync           -> envia archivos al servidor"
-	@echo "  make remote-prepare -> crea el directorio remoto"
-	@echo "  make remote-deps    -> ejecuta go mod tidy y go mod download en remoto"
-	@echo "  make remote-build   -> compila en remoto con go build ./..."
+	@echo "  make remote-build   -> compila binarios en remoto"
 	@echo "  make remote-clean   -> borra el directorio remoto"
 
 provision: remote-prepare sync remote-deps remote-build
 
 remote-prepare:
-	$(SSH) $(SSH_USER)@$(SSH_HOST) "mkdir -p $(REMOTE_DIR)"
+	ssh root@$(SSH_HOST) "mkdir -p /opt/pruebas-ollama /opt/pruebas-ollama/bin"
 
 sync:
-	$(RSYNC) $(RSYNC_EXCLUDES) ./ $(SSH_USER)@$(SSH_HOST):$(REMOTE_DIR)/
+	$(RSYNC) $(RSYNC_EXCLUDES) ./ root@$(SSH_HOST):/opt/pruebas-ollama/
 
 remote-deps:
-	$(SSH) $(SSH_USER)@$(SSH_HOST) '\
+	ssh root@$(SSH_HOST) '\
 		set -e; \
-		cd $(REMOTE_DIR); \
+		cd /opt/pruebas-ollama; \
 		if ! command -v go >/dev/null 2>&1; then \
 			echo "ERROR: Go no esta instalado en el servidor remoto."; \
 			exit 1; \
@@ -50,11 +43,18 @@ remote-deps:
 	'
 
 remote-build:
-	$(SSH) $(SSH_USER)@$(SSH_HOST) '\
+	ssh root@$(SSH_HOST) '\
 		set -e; \
-		cd $(REMOTE_DIR); \
-		go build ./... \
+		cd /opt/pruebas-ollama; \
+		mkdir -p /opt/pruebas-ollama/bin; \
+		for dir in cmd/*; do \
+			if [ -d "$$dir" ]; then \
+				name=$$(basename $$dir); \
+				echo "Compilando $$name..."; \
+				go build -o /opt/pruebas-ollama/bin/$$name ./cmd/$$name; \
+			fi; \
+		done \
 	'
 
 remote-clean:
-	$(SSH) $(SSH_USER)@$(SSH_HOST) "rm -rf $(REMOTE_DIR)"
+	ssh root@$(SSH_HOST) "rm -rf /opt/pruebas-ollama"
